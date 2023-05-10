@@ -109,7 +109,6 @@ class Rylen(commands.Bot):
                 complete_query = prompt_query.append(custom_query)
                 response = openai.ChatCompletion.create(model = self.model_engine, messages = prompt_query, temperature = self.temperature)
             # Split the response message into chunks of 2000 characters or less since this is the single message limit for Discord
-            print(response.choices[0].message.content)
             response_message = response.choices[0]["message"].content
             response_chunks = [response_message[i:i+2000] for i in range(0, len(response_message), 2000)]
             for chunk in response_chunks:
