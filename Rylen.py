@@ -106,7 +106,6 @@ class Rylen(commands.Bot):
             async with message.channel.typing():
                 custom_query = {"role" : "user", "content" : message.clean_content}
                 prompt_query = config.bot_personalities[self.persona]
-                complete_query = prompt_query.append(custom_query)
                 response = openai.ChatCompletion.create(model = self.model_engine, messages = prompt_query, temperature = self.temperature)
             # Split the response message into chunks of 2000 characters or less since this is the single message limit for Discord
             response_message = response.choices[0]["message"].content
