@@ -1,7 +1,7 @@
 from discord.ext import tasks, commands
 import discord
 import openai
-import config
+import config  # Use your own config.py here
 import csv
 
 class Rylen(commands.Bot):
