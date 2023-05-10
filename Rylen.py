@@ -82,9 +82,9 @@ class Rylen(commands.Bot):
     # On message listener
     @commands.Cog.listener()
     async def on_message(self, message):
-        # Channel IDs for where the bot is allowed - (restricted to bot channel for now)
+        # Channel IDs for where the bot is allowed
         allowed_channels = [1105651398110085251, 1070898555750977597]
-        # Verify that message is not from bot or is not within disallowed channels
+        # Verify that message is not from bot or and message is in allowed channel
         if message.author == self.user or message.channel.id not in allowed_channels:
             return
 
