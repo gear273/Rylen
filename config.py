@@ -1,4 +1,5 @@
 # .gitignore should include reference to config.py
+# This is an example of what the config.py file could look like
 
 openai_api_key = ""
 
