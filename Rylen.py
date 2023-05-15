@@ -7,6 +7,8 @@ import csv
 import forecast
 import config
 
+# TODO: Add !forecast and !hourly to self.rylen_commands so that only one check is performed in the on_message
+
 class Rylen(commands.Bot):
     def __init__(self):
         # Command_prefix - Bot command trigger, checks for existence at start of message to see if command sent
@@ -57,15 +59,19 @@ class Rylen(commands.Bot):
         @self.command(name="temperature")
         async def temperature(ctx):
             message_parts = ctx.message.content.split()
+            embed = discord.Embed(title="Temperature Updated", colour=0x4f2d7f)
+            embed.set_footer(text="Rylen: Tarleton Engineering Discord Bot")
             try:
                 temp = float(message_parts[1])
                 if len(message_parts) >= 2 and temp > 0.0 and temp < 2.0:
                     self.temperature = temp
-                    await ctx.send(f"Temperature has been set to {self.temperature}.")
+                    embed.add_field(name="Temperature changed to", value=self.temperature)
                 else:
-                    await ctx.send("Invalid temperature value. Please enter a number between 0.0 and 2.0 after the command, like this: '!temperature 0.7'.")
+                    embed.add_field(name="Invalid temperature value", value="Please enter a number between 0.0 and 2.0 after the command, ex. '!temperature 0.7'")
+                await ctx.send(embed=embed)
             except ValueError:
-                await ctx.send("Invalid temperature value. Please enter a number after the command, like this: '!temperature 0.7'.")
+                embed.add_field(name="Invalid temperature value", value="Please enter a number after the command - ex. '!temperature 0.7'", inline=False)
+                await ctx.send(embed=embed)
 
         # Change personality of engine with '!personality'
         @self.command(name="personality")
@@ -311,7 +317,7 @@ class Rylen(commands.Bot):
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        channel = discord.utils.get(member.guild_text_channels, name="general")
+        channel = discord.utils.get(self.guild_text_channels, name="general")
         await channel.send(f"{member} has arrived!")
 
 if __name__ == "__main__":
