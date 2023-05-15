@@ -7,8 +7,6 @@ import csv
 import forecast
 import config
 
-# TODO: Add !forecast and !hourly to self.rylen_commands so that only one check is performed in the on_message
-
 class Rylen(commands.Bot):
     def __init__(self):
         # Command_prefix - Bot command trigger, checks for existence at start of message to see if command sent
