@@ -6,6 +6,9 @@ import json
 import csv
 import forecast
 import config
+import time
+
+# TODO: Add !forecast and !hourly to self.rylen_commands so that only one check is performed in the on_message
 
 class Rylen(commands.Bot):
     def __init__(self):
@@ -19,7 +22,9 @@ class Rylen(commands.Bot):
         self.temperature = 0.5
         self.persona = str(next(iter(config.bot_personalities)))
         self.avail_personas = [persona for persona in config.bot_personalities]
-        self.rylen_commands = ("!parameters", "!temperature", "!personality", "!rylen_help", "!role_message", "!information")
+        self.conversation_memory = False
+        # Commands for Rylen functionality/help
+        self.rylen_commands = ("!parameters", "!temperature", "!personality", "!rylen_help", "!role_message", "!information", "!chat_history", "!forecast", "!hourly", "!alerts")
         self.rylen_triggers = ("Bad bot", "bad bot")
 
         # Guild Roles
@@ -48,6 +53,7 @@ class Rylen(commands.Bot):
             embed.add_field(name="!temperature [temperature]", value="Sets the temperature to the float value passed (0.0 - 2.0)", inline=False)
             embed.add_field(name="!personality [persona]", value="Sets the persona to the string value passed", inline=False)
             embed.add_field(name="Available Peronas: ", value=self.avail_personas, inline=False)
+            embed.add_field(name="!chat_history", value="Toggles whether the chat history is remembered or not", inline=False)
             embed.add_field(name="!forecast [city, state]", value="Displays forecast of desired location - ex. Dallas, TX", inline=False)
             embed.add_field(name="!hourly [city, state]", value="Displays hourly forecast of desired location - ex. Stephenville, TX", inline=False)
             embed.add_field(name="!alerts [city, state]", value="Displays active weather alerts of desired location - ex. Fort Worth, TX", inline=False)
@@ -84,6 +90,15 @@ class Rylen(commands.Bot):
                 embed.add_field(name="Please enter on of the available personas listed below", value=self.avail_personas, inline=False)
             embed.set_footer(text="Rylen: Tarleton Engineering Discord Bot")
             await ctx.send(embed=embed)
+        
+        # Change whether bot remembers OpenAI API queries
+        @self.command(name="chat_history")
+        async def chat_history(ctx):
+            self.conversation_memory = not self.conversation_memory
+            embed = discord.Embed(title="Memory Cahce", colour=0x4f2d7f)
+            embed.add_field(name="Remember conversation history?", value="Yes" if self.conversation_memory else "No")
+            embed.set_footer(text="Rylen: Tarleton Engineering Discord Bot")
+            await ctx.send(embed=embed)
 
         # Display all current parameters with '!parameters'
         @self.command(name="parameters")
@@ -93,9 +108,11 @@ class Rylen(commands.Bot):
             embed.add_field(name="Model Engine: ", value=self.model_engine, inline=False)
             embed.add_field(name="Model Persona: ", value=self.persona, inline=False)
             embed.add_field(name="Temperature", value=self.temperature, inline=False)
+            embed.add_field(name="Remember Chat History", value="Yes" if self.conversation_memory else "No")
             await ctx.send(embed=embed)
             #await ctx.send(f"Model Engine: {self.model_engine}\nModel Persona: {self.persona}\nModel Temperature: {self.temperature}")
 
+        # Send role message to desired channel - users can add emoji reactions to auto-assign roles based on their selected major
         @self.command(name="role_message")
         async def role_message(ctx):
             embed = discord.Embed(title="Choose Your Major", colour=0x1e1f22)
@@ -111,6 +128,7 @@ class Rylen(commands.Bot):
             for emoji in self.roles.keys():
                 await message.add_reaction(emoji)
 
+        # Send all bot related information - libraries, APIs, GitHub, etc.
         @self.command(name="information")
         async def information(ctx):
            embed = discord.Embed(title="Information", description="Information about Rylen, libraries, and used APIs", colour=0x006400)
@@ -122,6 +140,47 @@ class Rylen(commands.Bot):
            embed.add_field(name="Discord.py", value="https://github.com/Rapptz/discord.py", inline=False)
            embed.add_field(name="Geopy.py", value="https://pypi.org/project/geopy/", inline=False)
            await ctx.send(embed=embed)
+
+        # Display 2-day forecast from weather.gov API call - present day, tomorrow, tomorrow night
+        @self.command(name="forecast")
+        async def forecast_day(ctx):
+            client_location = ctx.message.content[len("!forecast") + 1:]
+            channel = self.get_channel(ctx.message.channel.id)
+            wait = await channel.send("Pulling data.....")
+            daily_forecast = forecast.getForecast(client_location)
+            await wait.delete()
+            if daily_forecast == None:
+                await channel.send("Please input a valid location.")
+            else:
+                for data in daily_forecast[:3]:
+                    await self.forecastEmbed(channel, client_location, data)
+
+        # Display hourly forecast from weather.gov API call - shows information up to the next 4 hours
+        @self.command(name="hourly")
+        async def forecast_hourly(ctx):
+            client_location = ctx.message.content[len("!hourly") + 1:]
+            channel = self.get_channel(ctx.message.channel.id)
+            wait = await channel.send("Pulling data.....")
+            hourly_forecast = forecast.getForecastHourly(client_location)
+            await wait.delete()
+            if hourly_forecast == None:
+                await channel.send("Please input a valid location.")
+            else:
+                await self.forecastHourlyEmbed(channel, client_location, hourly_forecast)
+
+        # Display all active weather alerts from weather.gov API call - uses [city, state] notation
+        @self.command(name="alerts")
+        async def county_alerts(ctx):
+            client_location = ctx.message.content[len("!alerts") + 1:]
+            channel = self.get_channel(ctx.message.channel.id)
+            wait = await channel.send("Pulling data.....")
+            alerts = forecast.getCountyAlerts(client_location)
+            await wait.delete()
+            if alerts != None:
+                await self.weatherAlert(channel, alerts, client_location)
+            else:
+                await channel.send("Please enter a valid area.")
+
        # End commands 
     
     # Method for logging interaction data (most importantly keeps track of token usage)
@@ -151,7 +210,7 @@ class Rylen(commands.Bot):
     @commands.Cog.listener()
     async def on_message(self, message):
         # Channel IDs for where the bot is allowed - (restricted to bot channel for now)
-        allowed_channels = [1107119090541285470] # 1105651398110085251 - rylens-house channel id
+        allowed_channels = [1105651398110085251, 1107119090541285470] # 1105651398110085251 - rylens-house channel id
         # Verify that message is not from bot or is not within disallowed channels
         if message.author == self.user or message.channel.id not in allowed_channels:
             return
@@ -161,42 +220,8 @@ class Rylen(commands.Bot):
             await self.process_commands(message)
             return
 
-        # Message checks
-        if message.content.startswith("!forecast"): # Fetching 2-Day forecast using Weather.gov API
-            client_location = message.content[len("!forecast") + 1:]
-            channel = self.get_channel(message.channel.id)
-            wait = await channel.send("Pulling data......")
-            daily_forecast = forecast.getForecast(client_location)
-            await wait.delete()
-            if daily_forecast == None:
-                await message.channel.send("Please input a valid location")
-            else:
-                for data in daily_forecast[:3]:
-                    await self.forecastEmbed(channel, client_location, data)
-
-        if message.content.startswith("!hourly"): # Fetching hourly forecast using Weather.gov API
-            client_location = message.content[len("!hourly") + 1:]
-            channel = self.get_channel(message.channel.id)
-            wait = await channel.send("Pulling data......")
-            hourly_forecast = forecast.getForecastHourly(client_location)
-            await wait.delete()
-            if hourly_forecast == None:
-                await channel.send("Please input a valid location")
-            else:
-                await self.forecastHourlyEmbed(channel, client_location, hourly_forecast)
-
-        if message.content.startswith("!alerts"): # Fetching active weather alerts using Weather.gov API
-            client_location = message.content[len("!alerts") + 1:]
-            channel = self.get_channel(message.channel.id)
-            wait = await channel.send("Pulling data......")
-            alerts = forecast.getCountyAlerts(client_location)
-            await wait.delete()
-            if alerts != None:
-                await self.weatherAlert(channel, alerts, client_location)
-            else:
-                await channel.send("Please enter a valid area.")
-
-        if message.content in self.rylen_triggers: # Special phrases to trigger Rylen - ex. 'Bad bot'
+        # Special phrases to trigger Rylen - ex. 'Bad bot'
+        if message.content in self.rylen_triggers:
             async with message.channel.typing():
                 custom_query = {"role" : "user", "content" : message.clean_content}
                 prompt_query = config.bot_personalities["chad"]
@@ -212,6 +237,7 @@ class Rylen(commands.Bot):
             async with message.channel.typing():
                 custom_query = {"role" : "user", "content" : message.clean_content}
                 prompt_query = config.bot_personalities[self.persona]
+                print(f"\nPrompt query before response: \n{prompt_query}")
                 complete_query = prompt_query.append(custom_query)
                 try:
                     response = openai.ChatCompletion.create(model = self.model_engine, messages = prompt_query, temperature = self.temperature)
@@ -222,9 +248,17 @@ class Rylen(commands.Bot):
                         await message.channel.send(chunk)
                 except Exception as e:
                     print(f"Error: {e}")
+            if not self.conversation_memory:
+                config.bot_personalities[self.persona].pop()
+            else:
+                response_query = {"role" : "assistant", "content" : response_message}
+                config.bot_personalities[self.persona].append(response_query)
+                if len(config.bot_personalities[self.persona]) > 10:
+                    del config.bot_personalities[self.persona][1:3]
+            print(f"\nPrompt query after response: \n{config.bot_personalities[self.persona]}")
             await self.data_logging(message, response) # Log the correspondence with the bot
 
-    # Display 2-Day forecast upon request
+    # Create and Display 2-Day forecast upon request
     @commands.Cog.listener()
     async def forecastEmbed(self, channel, location, data):
         embed = discord.Embed(title = data['name'], description = "Forecast for " + location, colour = 0x4285F4)
@@ -273,11 +307,19 @@ class Rylen(commands.Bot):
         member = discord.utils.get(guild.members, id=payload.user_id)
         if member == self.user: # Ignore if bot added reaction - useful if you modify existing message to add new reactions/roles
             return
+        current_time = time.time()
+        
         # Check that specific message is in specific channel - only one is necessary, two were used for redundancy in case two bot messages exist in channel
         if payload.channel_id == self.roles_channel_id and payload.message_id == self.roles_message_id:
             message = await guild.get_channel(payload.channel_id).fetch_message(payload.message_id)
             roles = [discord.utils.get(guild.roles, id=self.roles[str(r)]) for r in message.reactions if str(r) in self.roles]
             user_roles = [r for r in member.roles if r in roles]
+            if payload.user_id in self.current_reactions.keys():
+                last_reaction_time = self.current_reactions[payload.user_id]
+                if current_time - last_reaction_time < 10:
+                    await message.remove_reaction(str(payload.emoji), member)
+                    return
+            self.current_reactions[payload.user_id] = current_time
             if str(payload.emoji) in self.roles.keys():
                 role_id = self.roles[str(payload.emoji)]
                 role = discord.utils.get(payload.member.guild.roles, id=role_id)
@@ -285,16 +327,9 @@ class Rylen(commands.Bot):
                     await member.remove_roles(*user_roles)
                     await member.add_roles(role)
                     print(f"Added {role} to {member}")
-            else:
-                role = discord.utils.get(guild.roles, name=payload.emoji)
-                if role is not None and role not in member.roles:
-                    for reaction in message.reactions:
-                        await member.remove_roles(*user_roles)
-                        await member.add_roles(role)
-                    print(f"Added {role} to {member}")
-        if payload.user_id in self.current_reactions.keys():
-            await message.remove_reaction(self.current_reactions[payload.user_id], member)
-        self.current_reactions.update({payload.user_id : str(payload.emoji)})
+            for reaction in message.reactions:
+                if str(reaction) != str(payload.emoji):
+                    await message.remove_reaction(reaction, member)
 
     # Method for "Declare Your Major" bot functionality of removing unique roles
     # User role is removed based on removal of emoji reaction by user - only one role/reaction per user, all others removed upon new selection
