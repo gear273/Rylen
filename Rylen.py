@@ -8,7 +8,7 @@ import forecast
 import config
 import time
 
-# TODO: Add !forecast and !hourly to self.rylen_commands so that only one check is performed in the on_message
+# TODO: Fix bug in role assignment - Users can spam reactions and gain multiple roles when it should be limited to one 
 
 class Rylen(commands.Bot):
     def __init__(self):
