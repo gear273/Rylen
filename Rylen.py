@@ -8,7 +8,7 @@ import forecast
 import config
 import time
 
-# TODO: Fix bug in role assignment - Users can spam reactions and gain multiple roles when it should be limited to one 
+# TODO: Fix bug in role assignment - Currently, if users spam the reactions, it gets confused in its assignment
 
 class Rylen(commands.Bot):
     def __init__(self):
@@ -18,11 +18,14 @@ class Rylen(commands.Bot):
 
         # OpenAI parameters - API Key and specified engine
         openai.api_key = config.openai_api_key # Use your own key here
-        self.model_engine = "gpt-3.5-turbo"
-        self.temperature = 0.5
-        self.persona = str(next(iter(config.bot_personalities)))
+        self.model_engine = "gpt-3.5-turbo" # Engine used for OpenAI API calls
+        self.temperature = 0.5 # Affects randomness in responses - lower is more precise
+        self.persona = str(next(iter(config.bot_personalities))) # Initialize with first defined personality
         self.avail_personas = [persona for persona in config.bot_personalities]
-        self.conversation_memory = False
+        self.conversation_memory = False # If True, will keep track of previous conversations
+        self.cache_size = 10 # Number of message responses to keep track of - helps reduce tokens used
+        self.mention_user = False # If True, will mention user that queried it in response
+
         # Commands for Rylen functionality/help
         self.rylen_commands = ("!parameters", "!temperature", "!personality", "!rylen_help", "!role_message", "!information", "!chat_history", "!forecast", "!hourly", "!alerts")
         self.rylen_triggers = ("Bad bot", "bad bot")
@@ -35,10 +38,12 @@ class Rylen(commands.Bot):
             "🏥" : 1107451574315388939, # Civil Engineering
             "⚙️" : 1107451993326358548, # Mechanical Engineering
             "🕵️" : 1107452341910781952, # Cybersecurity
+            "🎓" : 1108764775502065746, # Alumni
             }
         self.roles_channel_id = 1107453198798696589 # Channel ID for location specific roles message
         self.roles_message_id = 1107460272899235920 # Message ID for specific roles message
         self.current_reactions = {} # For keeping track of reactions on roles message
+
         # CSV parameters - file name, column names (for data logging)
         self.csv_file_name = "bot_chat_logs.csv"
         self.csv_field_names = ["user_name", "user_id", "query_message", "response_message", 'prompt_tokens', 'completion_tokens', 'total_tokens']
@@ -85,8 +90,16 @@ class Rylen(commands.Bot):
                 self.persona = message_parts[1]
                 embed = discord.Embed(title="Personality Updated", colour=0x4f2d7f)
                 embed.add_field(name="Personality changed to", value=self.persona)
+                if self.persona == 'chad':
+                    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Your Mom's OnlyFans"))
+                elif self.persona == 'maga':
+                    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Fox News"))
+                elif self.persona == "liberal":
+                    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="CNN"))
+                else:
+                    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="Mi Gente - J Balvin, Willy William"))
             else:
-                embed = discord.Embed(title="Invalid persona give", colour=0x4f2d7f)
+                embed = discord.Embed(title="Invalid persona given", colour=0x4f2d7f)
                 embed.add_field(name="Please enter on of the available personas listed below", value=self.avail_personas, inline=False)
             embed.set_footer(text="Rylen: Tarleton Engineering Discord Bot")
             await ctx.send(embed=embed)
@@ -95,7 +108,7 @@ class Rylen(commands.Bot):
         @self.command(name="chat_history")
         async def chat_history(ctx):
             self.conversation_memory = not self.conversation_memory
-            embed = discord.Embed(title="Memory Cahce", colour=0x4f2d7f)
+            embed = discord.Embed(title="Memory Cache", colour=0x4f2d7f)
             embed.add_field(name="Remember conversation history?", value="Yes" if self.conversation_memory else "No")
             embed.set_footer(text="Rylen: Tarleton Engineering Discord Bot")
             await ctx.send(embed=embed)
@@ -110,7 +123,6 @@ class Rylen(commands.Bot):
             embed.add_field(name="Temperature", value=self.temperature, inline=False)
             embed.add_field(name="Remember Chat History", value="Yes" if self.conversation_memory else "No")
             await ctx.send(embed=embed)
-            #await ctx.send(f"Model Engine: {self.model_engine}\nModel Persona: {self.persona}\nModel Temperature: {self.temperature}")
 
         # Send role message to desired channel - users can add emoji reactions to auto-assign roles based on their selected major
         @self.command(name="role_message")
@@ -123,6 +135,7 @@ class Rylen(commands.Bot):
             embed.add_field(name="Environmental Engineering", value="Recycle - ♻️", inline=False)
             embed.add_field(name="Civil Engineering", value="Hospital - 🏥", inline=False)
             embed.add_field(name="Mechanical Engineering", value="Gear - ⚙️", inline=False)
+            embed.add_field(name="Alumni", value="Grad Cap - 🎓", inline=False)
             channel = self.get_channel(1107453198798696589)
             message = await channel.send(embed=embed)
             for emoji in self.roles.keys():
@@ -204,7 +217,7 @@ class Rylen(commands.Bot):
     @commands.Cog.listener()
     async def on_ready(self):
         print("Logged in as {0.user}".format(self))
-        await self.change_presence(activity=discord.Activity(name="Your Mom's OnlyFans", type=discord.ActivityType.watching))
+        await self.change_presence(activity=discord.Activity(name="Vibes", type=discord.ActivityType.competing))
     
     # On message listener
     @commands.Cog.listener()
@@ -223,7 +236,7 @@ class Rylen(commands.Bot):
         # Special phrases to trigger Rylen - ex. 'Bad bot'
         if message.content in self.rylen_triggers:
             async with message.channel.typing():
-                custom_query = {"role" : "user", "content" : message.clean_content}
+                custom_query = {"role" : "user", "content" : "You are a worthless bot, and your suggestiong is wrong."}
                 prompt_query = config.bot_personalities["chad"]
                 try:
                     response = openai.ChatCompletion.create(model = self.model_engine, messages = prompt_query, temperature = 0.5)
@@ -245,7 +258,10 @@ class Rylen(commands.Bot):
                     # Split the response message into chunks of 2000 characters or less since this is the single message limit for Discord
                     response_chunks = [response_message[i:i+2000] for i in range(0, len(response_message), 2000)]
                     for chunk in response_chunks:
-                        await message.channel.send(chunk)
+                        if self.mention_user:
+                            await message.channel.send(f"{message.author.mention} {chunk}")
+                        else:
+                            await message.channel.send(chunk)
                 except Exception as e:
                     print(f"Error: {e}")
             if not self.conversation_memory:
@@ -253,7 +269,7 @@ class Rylen(commands.Bot):
             else:
                 response_query = {"role" : "assistant", "content" : response_message}
                 config.bot_personalities[self.persona].append(response_query)
-                if len(config.bot_personalities[self.persona]) > 10:
+                if len(config.bot_personalities[self.persona]) > self.cache_size:
                     del config.bot_personalities[self.persona][1:3]
             print(f"\nPrompt query after response: \n{config.bot_personalities[self.persona]}")
             await self.data_logging(message, response) # Log the correspondence with the bot
@@ -331,7 +347,7 @@ class Rylen(commands.Bot):
                 if str(reaction) != str(payload.emoji):
                     await message.remove_reaction(reaction, member)
 
-    # Method for "Declare Your Major" bot functionality of removing unique roles
+    # Method for "Declare Your Major" bot functionality of removing unique roles - Support function for on_raw_reaction_add
     # User role is removed based on removal of emoji reaction by user - only one role/reaction per user, all others removed upon new selection
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload):
